@@ -14,6 +14,39 @@ public class EntitlementsProperties {
     /** Call window the failure rate is computed over. */
     private int slidingWindowSize = 20;
 
+    private final CacheInvalidation cacheInvalidation = new CacheInvalidation();
+
+    public CacheInvalidation getCacheInvalidation() {
+        return cacheInvalidation;
+    }
+
+    /** {@code sophie.entitlements.cache-invalidation.*} — the fanout-exchange listener (Phase 2 §0.3).
+     *  Set {@code enabled: false} for a service with no RabbitMQ broker to talk to; the near-cache
+     *  still works, it just won't be invalidated early (falls back to its 30s TTL). */
+    public static class CacheInvalidation {
+
+        private boolean enabled = true;
+
+        /** Must match the fanout exchange name subscription-service's outbox relay publishes to. */
+        private String exchangeName = "subscription-events";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchangeName() {
+            return exchangeName;
+        }
+
+        public void setExchangeName(String exchangeName) {
+            this.exchangeName = exchangeName;
+        }
+    }
+
     public float getFailureRateThreshold() {
         return failureRateThreshold;
     }
