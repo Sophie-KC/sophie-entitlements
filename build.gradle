@@ -1,0 +1,78 @@
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'maven-publish'
+}
+
+group = 'org.sophie'
+// Same DECLARED_VERSION / release-tag convention as sophie-protos.
+ext.DECLARED_VERSION = '0.1.0'
+version = project.findProperty('releaseVersion') ?: DECLARED_VERSION
+description = 'sophie-entitlements — Spring Boot starter wrapping subscription-service entitlement checks'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    withSourcesJar()
+}
+
+repositories {
+    mavenLocal()
+    maven {
+        name = 'GitHubPackages'
+        url = uri("https://maven.pkg.github.com/${project.findProperty('gpr.owner') ?: 'Sophie-KC'}/sophie-protos")
+        credentials {
+            username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
+            password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+        }
+    }
+    mavenCentral()
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.1.0"
+    }
+}
+
+dependencies {
+    // Exported: any consumer needs the generated stubs to reference EntitlementServiceGrpc etc.
+    api 'org.sophie:sophie-protos:0.21.0'
+
+    implementation 'org.springframework.boot:spring-boot-autoconfigure'
+    implementation 'net.devh:grpc-spring-boot-starter:3.1.0.RELEASE'
+    implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'
+    implementation 'org.slf4j:slf4j-api'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.register('printVersion') {
+    doLast { println DECLARED_VERSION }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = uri("https://maven.pkg.github.com/${project.findProperty('gpr.owner') ?: 'Sophie-KC'}/sophie-entitlements")
+            credentials {
+                username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
+                password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}
