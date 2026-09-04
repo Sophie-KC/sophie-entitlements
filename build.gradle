@@ -6,7 +6,7 @@ plugins {
 
 group = 'org.sophie'
 // Same DECLARED_VERSION / release-tag convention as sophie-protos.
-ext.DECLARED_VERSION = '0.2.0'
+ext.DECLARED_VERSION = '0.2.1'
 version = project.findProperty('releaseVersion') ?: DECLARED_VERSION
 description = 'sophie-entitlements — Spring Boot starter wrapping subscription-service entitlement checks'
 
@@ -41,7 +41,11 @@ dependencies {
     api 'org.sophie:sophie-protos:0.22.0'
 
     implementation 'org.springframework.boot:spring-boot-autoconfigure'
-    implementation 'net.devh:grpc-spring-boot-starter:3.1.0.RELEASE'
+    // Client-only: this library only ever consumes EntitlementServiceGrpc's blocking stub, it never
+    // implements a @GrpcService. The combined grpc-spring-boot-starter auto-starts an embedded gRPC
+    // server (default port 9090) in EVERY consuming app, including gRPC-server-less apps like
+    // api-gateway — collided with org-service's real 9090 in api-gateway's test suite.
+    implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
     implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'
     implementation 'org.slf4j:slf4j-api'
     // Near-cache (§3.2 of the master prompt) and its fanout-exchange invalidation listener (Phase 2
@@ -55,6 +59,10 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // Test-only: CacheInvalidationListenerIntegrationTest stands up an in-process fake
+    // EntitlementService (@GrpcService) to test the near-cache invalidation listener. Main code stays
+    // client-only (see the implementation dependency above) — this must never leak into consumers.
+    testImplementation 'net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
