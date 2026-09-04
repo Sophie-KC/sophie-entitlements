@@ -8,7 +8,6 @@ import java.util.function.Supplier;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.sophie.subscriptionservice.grpc.AccessMode;
 import org.sophie.subscriptionservice.grpc.EntitlementMap;
 import org.sophie.subscriptionservice.grpc.EntitlementServiceGrpc;
 import org.sophie.subscriptionservice.grpc.EntitlementValue;
@@ -19,10 +18,9 @@ import org.springframework.stereotype.Component;
  * Production {@link Entitlements}: near-cache -> gRPC (master prompt §3.2's "near-cache -> Redis ->
  * gRPC" flow, minus Redis — still deferred, the 30s near-cache TTL is the outer staleness bound until
  * it's built), wrapped in a resilience4j circuit breaker for the gRPC leg. See {@link Entitlements} for
- * the fail-open/fail-closed contract per method — that split is hardcoded here (limit() open,
- * require()/requireWriteAccess() closed) rather than configured per-key, which is a deliberate
- * simplification: no caller today needs a feature-flag-style require() that should fail open, so the
- * extra config surface isn't earned yet.
+ * the fail-open/fail-closed contract per method — that split is hardcoded here rather than configured
+ * per-key, which is a deliberate simplification: no caller today needs a feature-flag-style check that
+ * should fail open, so the extra config surface isn't earned yet.
  *
  * <p>Always resolves the WHOLE map per org (one cache entry, one gRPC call), never a single key —
  * {@code GetEntitlements} is "the one every service actually uses" per the proto's own doc comment.
@@ -52,23 +50,42 @@ class GrpcEntitlements implements Entitlements {
     }
 
     @Override
-    public void require(UUID orgId, String key) {
+    public void requireFeature(UUID orgId, String key) {
         EntitlementMap map;
         try {
             map = resolve(orgId);
         } catch (RuntimeException e) {
-            log.warn("subscription-service unavailable; failing CLOSED for org {} key '{}'", orgId, key, e);
-            throw new EntitlementDeniedException(key, -1, -1);
+            log.warn("subscription-service unavailable; failing CLOSED for org {} feature '{}'", orgId, key, e);
+            throw EntitlementDeniedException.feature(key);
+        }
+        EntitlementValue value = map.getEntitlementsMap().get(key);
+        boolean allowed = value != null && (value.getIsUnlimited() || value.getBoolValue());
+        if (!allowed) {
+            throw EntitlementDeniedException.feature(key);
+        }
+    }
+
+    @Override
+    public void requireQuota(UUID orgId, String key, long currentUsage) {
+        EntitlementMap map;
+        try {
+            map = resolve(orgId);
+        } catch (RuntimeException e) {
+            log.warn("subscription-service unavailable; failing CLOSED for org {} quota '{}'", orgId, key, e);
+            throw EntitlementDeniedException.quota(key, -1, currentUsage);
         }
         EntitlementValue value = map.getEntitlementsMap().get(key);
         if (value == null) {
             // Unknown key is a caller bug (a typo'd key name), not an outage — still fail closed on a
             // quota-consuming write rather than silently allowing it.
-            throw new EntitlementDeniedException(key, -1, -1);
+            throw EntitlementDeniedException.quota(key, -1, currentUsage);
         }
-        boolean allowed = value.getIsUnlimited() || value.getBoolValue() || value.getNumberValue() > 0;
-        if (!allowed) {
-            throw new EntitlementDeniedException(key, value.getNumberValue(), -1);
+        if (value.getIsUnlimited()) {
+            return;
+        }
+        long resolvedLimit = value.getNumberValue();
+        if (currentUsage + 1 > resolvedLimit) {
+            throw EntitlementDeniedException.quota(key, resolvedLimit, currentUsage);
         }
     }
 
@@ -94,10 +111,23 @@ class GrpcEntitlements implements Entitlements {
             map = resolve(orgId);
         } catch (RuntimeException e) {
             log.warn("subscription-service unavailable; failing CLOSED (denying write) for org {}", orgId, e);
-            throw new EntitlementDeniedException("access_mode", -1, -1);
+            throw EntitlementDeniedException.accessDenied();
         }
-        if (map.getAccessMode() == AccessMode.READ_ONLY) {
-            throw new EntitlementDeniedException("access_mode", -1, -1);
+        if (map.getAccessMode() == org.sophie.subscriptionservice.grpc.AccessMode.READ_ONLY) {
+            throw EntitlementDeniedException.accessDenied();
+        }
+    }
+
+    @Override
+    public Entitlements.AccessMode accessMode(UUID orgId) {
+        try {
+            EntitlementMap map = resolve(orgId);
+            return map.getAccessMode() == org.sophie.subscriptionservice.grpc.AccessMode.READ_ONLY
+                    ? Entitlements.AccessMode.READ_ONLY
+                    : Entitlements.AccessMode.FULL;
+        } catch (RuntimeException e) {
+            log.warn("subscription-service unavailable; failing OPEN (FULL access) for org {}", orgId, e);
+            return Entitlements.AccessMode.FULL;
         }
     }
 
