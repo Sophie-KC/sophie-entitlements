@@ -67,25 +67,41 @@ class GrpcEntitlements implements Entitlements {
 
     @Override
     public void requireQuota(UUID orgId, String key, long currentUsage) {
+        requireTotalWithinLimit(orgId, key, currentUsage, currentUsage + 1);
+    }
+
+    @Override
+    public void requireQuotaTotal(UUID orgId, String key, long totalUsageAfter) {
+        requireTotalWithinLimit(orgId, key, totalUsageAfter, totalUsageAfter);
+    }
+
+    /**
+     * Shared resolve-and-compare: {@code reportedCurrent} is what a thrown {@link
+     * EntitlementDeniedException} reports as "current" (the caller's own before-this-operation usage
+     * for {@link #requireQuota}'s "+1" semantics; the same as {@code prospectiveTotal} for {@link
+     * #requireQuotaTotal}, which has no separate "before" figure), {@code prospectiveTotal} is what's
+     * actually compared against the resolved limit.
+     */
+    private void requireTotalWithinLimit(UUID orgId, String key, long reportedCurrent, long prospectiveTotal) {
         EntitlementMap map;
         try {
             map = resolve(orgId);
         } catch (RuntimeException e) {
             log.warn("subscription-service unavailable; failing CLOSED for org {} quota '{}'", orgId, key, e);
-            throw EntitlementDeniedException.quota(key, -1, currentUsage);
+            throw EntitlementDeniedException.quota(key, -1, reportedCurrent);
         }
         EntitlementValue value = map.getEntitlementsMap().get(key);
         if (value == null) {
             // Unknown key is a caller bug (a typo'd key name), not an outage — still fail closed on a
             // quota-consuming write rather than silently allowing it.
-            throw EntitlementDeniedException.quota(key, -1, currentUsage);
+            throw EntitlementDeniedException.quota(key, -1, reportedCurrent);
         }
         if (value.getIsUnlimited()) {
             return;
         }
         long resolvedLimit = value.getNumberValue();
-        if (currentUsage + 1 > resolvedLimit) {
-            throw EntitlementDeniedException.quota(key, resolvedLimit, currentUsage);
+        if (prospectiveTotal > resolvedLimit) {
+            throw EntitlementDeniedException.quota(key, resolvedLimit, reportedCurrent);
         }
     }
 

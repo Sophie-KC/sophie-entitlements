@@ -36,6 +36,17 @@ public interface Entitlements {
     void requireQuota(UUID orgId, String key, long currentUsage);
 
     /**
+     * Throws {@link EntitlementDeniedException} ({@link EntitlementDeniedException.Kind#QUOTA}) if
+     * {@code totalUsageAfter} exceeds the resolved limit for {@code key}. For quotas whose unit isn't
+     * "one item at a time" — {@link #requireQuota}'s implicit {@code currentUsage + 1} fits seats or
+     * guests, but not e.g. {@code storage.total.gb}, where a single file can push usage up by a large,
+     * variable amount in one step. The caller computes the exact prospective total itself (current
+     * usage plus whatever this operation would add) rather than this method inferring "+1". FAILS
+     * CLOSED, same reasoning as {@link #requireQuota}.
+     */
+    void requireQuotaTotal(UUID orgId, String key, long totalUsageAfter);
+
+    /**
      * The resolved numeric limit for {@code key} ({@code Long.MAX_VALUE} when unlimited). Use for
      * read-ish display (a "3 of 5 seats used" progress bar). FAILS OPEN: returns
      * {@code Long.MAX_VALUE} if subscription-service can't be reached — never blocks a plain read on

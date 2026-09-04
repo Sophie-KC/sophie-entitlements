@@ -94,6 +94,42 @@ class GrpcEntitlementsTest {
     }
 
     @Test
+    void requireQuotaTotalAllowsWhenProspectiveTotalIsAtTheLimit() {
+        stubMap(EntitlementMap.newBuilder()
+                .putEntitlements("storage.total.gb", EntitlementValue.newBuilder().setNumberValue(100).build())
+                .build());
+
+        entitlements.requireQuotaTotal(orgId, "storage.total.gb", 100); // exactly at the limit, must not throw
+    }
+
+    @Test
+    void requireQuotaTotalDeniesWhenProspectiveTotalExceedsTheLimit() {
+        stubMap(EntitlementMap.newBuilder()
+                .putEntitlements("storage.total.gb", EntitlementValue.newBuilder().setNumberValue(100).build())
+                .build());
+
+        // A single large file can push usage up by far more than "1" — requireQuota's implicit +1
+        // wouldn't catch this; requireQuotaTotal takes the exact prospective total instead.
+        assertThatThrownBy(() -> entitlements.requireQuotaTotal(orgId, "storage.total.gb", 137))
+                .isInstanceOf(EntitlementDeniedException.class)
+                .satisfies(e -> {
+                    EntitlementDeniedException ede = (EntitlementDeniedException) e;
+                    assertThat(ede.getKind()).isEqualTo(EntitlementDeniedException.Kind.QUOTA);
+                    assertThat(ede.getLimit()).isEqualTo(100);
+                    assertThat(ede.getCurrent()).isEqualTo(137);
+                });
+    }
+
+    @Test
+    void requireQuotaTotalAllowsUnlimitedRegardlessOfUsage() {
+        stubMap(EntitlementMap.newBuilder()
+                .putEntitlements("storage.total.gb", EntitlementValue.newBuilder().setIsUnlimited(true).build())
+                .build());
+
+        entitlements.requireQuotaTotal(orgId, "storage.total.gb", 999_999); // must not throw
+    }
+
+    @Test
     void accessModeReadsFullByDefault() {
         stubMap(EntitlementMap.newBuilder().setAccessMode(AccessMode.FULL).build());
 
