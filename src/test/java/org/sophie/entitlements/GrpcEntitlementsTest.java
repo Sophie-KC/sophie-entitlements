@@ -3,6 +3,8 @@ package org.sophie.entitlements;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.UUID;
@@ -57,6 +59,26 @@ class GrpcEntitlementsTest {
                 .isInstanceOf(EntitlementDeniedException.class)
                 .satisfies(e -> assertThat(((EntitlementDeniedException) e).getKind())
                         .isEqualTo(EntitlementDeniedException.Kind.FEATURE));
+    }
+
+    /** Phase 3 §6: "the rate limiter reads from cache — assert no gRPC call per request." The rate
+     *  limiter itself just calls {@link Entitlements#limit}, same as every other caller — this is the
+     *  near-cache read-through in {@code resolve()} that makes that true for ANY repeated caller within
+     *  the 30s TTL, not a rate-limiter-specific mechanism. */
+    @Test
+    void limitOnlyCallsTheStubOnceForRepeatedLookupsOfTheSameOrgWithinTheCacheTtl() {
+        stubMap(EntitlementMap.newBuilder()
+                .putEntitlements("api.rate.limit.rpm", EntitlementValue.newBuilder().setNumberValue(60).build())
+                .build());
+
+        long first = entitlements.limit(orgId, "api.rate.limit.rpm");
+        long second = entitlements.limit(orgId, "api.rate.limit.rpm");
+        long third = entitlements.limit(orgId, "api.rate.limit.rpm");
+
+        assertThat(first).isEqualTo(60);
+        assertThat(second).isEqualTo(60);
+        assertThat(third).isEqualTo(60);
+        verify(stub, times(1)).getEntitlements(any());
     }
 
     @Test
