@@ -6,7 +6,7 @@ plugins {
 
 group = 'org.sophie'
 // Same DECLARED_VERSION / release-tag convention as sophie-protos.
-ext.DECLARED_VERSION = '0.2.3'
+ext.DECLARED_VERSION = '0.2.4'
 version = project.findProperty('releaseVersion') ?: DECLARED_VERSION
 description = 'sophie-entitlements — Spring Boot starter wrapping subscription-service entitlement checks'
 
@@ -38,7 +38,7 @@ dependencyManagement {
 
 dependencies {
     // Exported: any consumer needs the generated stubs to reference EntitlementServiceGrpc etc.
-    api 'org.sophie:sophie-protos:0.22.0'
+    api 'org.sophie:sophie-protos:0.27.0'
 
     implementation 'org.springframework.boot:spring-boot-autoconfigure'
     // Client-only: this library only ever consumes EntitlementServiceGrpc's blocking stub, it never
