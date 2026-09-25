@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -61,8 +62,15 @@ public class EntitlementsAutoConfiguration {
             return new Queue("entitlements.invalidation." + UUID.randomUUID(), false, true, true);
         }
 
+        // Both parameters are qualified BY NAME. Without that, a consuming service that declares any
+        // Queue or FanoutExchange beans of its own (search-service does — its search-events work queues
+        // and DLQs) fails to start with "required a single bean, but N were found": Spring falls back
+        // to matching by parameter name, and this library is not compiled with -parameters, so the
+        // names aren't there to match on. Qualifying explicitly makes it work regardless.
         @Bean
-        Binding entitlementsInvalidationBinding(Queue entitlementsInvalidationQueue, FanoutExchange entitlementsFanoutExchange) {
+        Binding entitlementsInvalidationBinding(
+                @Qualifier("entitlementsInvalidationQueue") Queue entitlementsInvalidationQueue,
+                @Qualifier("entitlementsFanoutExchange") FanoutExchange entitlementsFanoutExchange) {
             return BindingBuilder.bind(entitlementsInvalidationQueue).to(entitlementsFanoutExchange);
         }
     }
