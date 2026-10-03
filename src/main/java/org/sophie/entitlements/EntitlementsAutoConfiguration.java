@@ -4,8 +4,10 @@ import java.util.UUID;
 import org.sophie.subscriptionservice.grpc.EntitlementServiceGrpc;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.FanoutExchange;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.TopicExchange;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -25,7 +27,7 @@ import org.springframework.context.annotation.Import;
 @AutoConfiguration
 @ConditionalOnClass(EntitlementServiceGrpc.class)
 @EnableConfigurationProperties(EntitlementsProperties.class)
-@Import({EntitlementsNearCache.class, GrpcEntitlements.class})
+@Import({EntitlementsNearCache.class, GrpcEntitlements.class, ModulesNearCache.class, GrpcModules.class})
 public class EntitlementsAutoConfiguration {
 
     /**
@@ -72,6 +74,23 @@ public class EntitlementsAutoConfiguration {
                 @Qualifier("entitlementsInvalidationQueue") Queue entitlementsInvalidationQueue,
                 @Qualifier("entitlementsFanoutExchange") FanoutExchange entitlementsFanoutExchange) {
             return BindingBuilder.bind(entitlementsInvalidationQueue).to(entitlementsFanoutExchange);
+        }
+
+        // The same per-instance queue, also bound to org-service's org.modules_changed on the platform's
+        // search-events topic exchange (re-declared with every other declarer's flags, so it's a no-op).
+        // A Declarables bean rather than TopicExchange/Binding beans: a consuming service that injects
+        // its own TopicExchange by type must not suddenly find two.
+        @Bean
+        Declarables modulesInvalidationDeclarables(
+                @Qualifier("entitlementsInvalidationQueue") Queue entitlementsInvalidationQueue,
+                EntitlementsProperties properties) {
+            TopicExchange exchange =
+                    new TopicExchange(properties.getCacheInvalidation().getModulesExchangeName(), true, false);
+            return new Declarables(
+                    exchange,
+                    BindingBuilder.bind(entitlementsInvalidationQueue)
+                            .to(exchange)
+                            .with(CacheInvalidationListener.EVENT_ORG_MODULES_CHANGED));
         }
     }
 }

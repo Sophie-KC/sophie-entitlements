@@ -38,8 +38,11 @@ public class EntitlementDeniedException extends RuntimeException {
      * 3 §2) is the primary path for this case, but backend services reachable without the Gateway
      * (jobs, consumers, internal RPC) still need to fail closed on their own via
      * {@link Entitlements#requireWriteAccess}.
+     * MODULE: the org has switched the module {@code key} off ({@link Modules#requireEnabled}) — gRPC
+     * PERMISSION_DENIED, Gateway HTTP 403 {@code MODULE_DISABLED}. Not a plan or role problem: an org
+     * admin turned it off in Settings → Modules (claude/org-modules-design.md).
      */
-    public enum Kind { FEATURE, QUOTA, ACCESS }
+    public enum Kind { FEATURE, QUOTA, ACCESS, MODULE }
 
     private static final Metadata.Key<String> KIND_KEY =
             Metadata.Key.of("entitlement-kind", Metadata.ASCII_STRING_MARSHALLER);
@@ -76,6 +79,10 @@ public class EntitlementDeniedException extends RuntimeException {
         return new EntitlementDeniedException(Kind.QUOTA, key, limit, current, false);
     }
 
+    public static EntitlementDeniedException moduleDisabled(String moduleKey) {
+        return new EntitlementDeniedException(Kind.MODULE, moduleKey, -1, -1, false);
+    }
+
     public static EntitlementDeniedException accessDenied() {
         return new EntitlementDeniedException(Kind.ACCESS, "access_mode", -1, -1, false);
     }
@@ -109,7 +116,7 @@ public class EntitlementDeniedException extends RuntimeException {
      * "a reasonable code for a non-Gateway caller/log line to see," not part of the actual contract.
      */
     public StatusRuntimeException toStatusRuntimeException() {
-        Status status = kind == Kind.FEATURE
+        Status status = kind == Kind.FEATURE || kind == Kind.MODULE
                 ? Status.PERMISSION_DENIED.withDescription(getMessage())
                 : Status.FAILED_PRECONDITION.withDescription(getMessage());
         Metadata trailers = new Metadata();

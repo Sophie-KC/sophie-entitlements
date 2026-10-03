@@ -10,7 +10,9 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Consumes subscription-service's {@code subscription-events} fanout exchange (Phase 2 §0.3) via an
+ * Consumes subscription-service's {@code subscription-events} fanout exchange (Phase 2 §0.3) — and,
+ * through a second binding of the same queue, org-service's {@code org.modules_changed} on the
+ * {@code search-events} topic exchange — via an
  * exclusive, auto-delete, server-named queue bound in {@link EntitlementsAutoConfiguration} — one such
  * queue per service INSTANCE, not a shared durable queue, so every instance invalidates its own
  * near-cache rather than one instance draining events the others never see.
@@ -25,6 +27,8 @@ class CacheInvalidationListener {
     private static final Logger log = LoggerFactory.getLogger(CacheInvalidationListener.class);
     private static final String EVENT_SUBSCRIPTION_CHANGED = "subscription.changed";
     private static final String EVENT_PLAN_ENTITLEMENTS_CHANGED = "plan.entitlements_changed";
+    /** org-service's outbox, on the {@code search-events} topic exchange (claude/org-modules-design.md). */
+    static final String EVENT_ORG_MODULES_CHANGED = "org.modules_changed";
 
     // Constructed directly rather than injected: Spring Boot 4 does not autowire a Jackson 2
     // ObjectMapper by default, and this listener has no reason to depend on the consuming
@@ -32,9 +36,11 @@ class CacheInvalidationListener {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final EntitlementsNearCache nearCache;
+    private final ModulesNearCache modulesNearCache;
 
-    CacheInvalidationListener(EntitlementsNearCache nearCache) {
+    CacheInvalidationListener(EntitlementsNearCache nearCache, ModulesNearCache modulesNearCache) {
         this.nearCache = nearCache;
+        this.modulesNearCache = modulesNearCache;
     }
 
     @RabbitListener(queues = "#{entitlementsInvalidationQueue.name}")
@@ -47,6 +53,8 @@ class CacheInvalidationListener {
             // frequency (a handful of times a year), per the master prompt §3.2.
             log.info("plan.entitlements_changed received; flushing the entire entitlements near-cache");
             nearCache.flushAll();
+        } else if (EVENT_ORG_MODULES_CHANGED.equals(routingKey)) {
+            evictModules(message);
         } else {
             log.debug("Ignoring subscription-events message with unrecognized routing key '{}'", routingKey);
         }
@@ -65,6 +73,20 @@ class CacheInvalidationListener {
         } catch (Exception e) {
             log.warn("Failed to parse subscription.changed payload; flushing the entire near-cache as a safe fallback", e);
             nearCache.flushAll();
+        }
+    }
+
+    private void evictModules(Message message) {
+        try {
+            String orgId = MAPPER.readTree(message.getBody()).path("orgId").asText(null);
+            if (orgId == null) {
+                modulesNearCache.flushAll();
+                return;
+            }
+            modulesNearCache.evict(UUID.fromString(orgId));
+        } catch (Exception e) {
+            log.warn("Failed to parse org.modules_changed payload; flushing the modules near-cache", e);
+            modulesNearCache.flushAll();
         }
     }
 }

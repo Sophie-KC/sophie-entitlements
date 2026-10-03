@@ -30,6 +30,17 @@ public class EntitlementsProperties {
         /** Must match the fanout exchange name subscription-service's outbox relay publishes to. */
         private String exchangeName = "subscription-events";
 
+        /** The topic exchange org-service's outbox publishes {@code org.modules_changed} to. */
+        private String modulesExchangeName = "search-events";
+
+        public String getModulesExchangeName() {
+            return modulesExchangeName;
+        }
+
+        public void setModulesExchangeName(String modulesExchangeName) {
+            this.modulesExchangeName = modulesExchangeName;
+        }
+
         public boolean isEnabled() {
             return enabled;
         }
