@@ -4,7 +4,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Org module switches (claude/org-modules-design.md): which of chat, tasks, docs, calendar and apps an
+ * Org module switches (claude/org-modules-design.md): which of chat, tasks, docs, calendar, apps and drive an
  * org admin has left on. Owned by org-service ({@code GetOrgModules}); this is the client every
  * module-owning service calls at the same entry points where it already resolves a resource's org.
  *
@@ -23,9 +23,10 @@ public interface Modules {
     String DOCS = "docs";
     String CALENDAR = "calendar";
     String APPS = "apps";
+    String DRIVE = "drive";
 
     /** Every switchable module, in display order. */
-    Set<String> ALL = Set.of(CHAT, TASKS, DOCS, CALENDAR, APPS);
+    Set<String> ALL = Set.of(CHAT, TASKS, DOCS, CALENDAR, APPS, DRIVE);
 
     /**
      * Throws {@link EntitlementDeniedException} ({@link EntitlementDeniedException.Kind#MODULE}) if the
